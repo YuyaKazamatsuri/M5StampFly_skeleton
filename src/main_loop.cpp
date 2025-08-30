@@ -57,27 +57,35 @@ void flight_mode(void);
 void parking_mode(void);
 void loop_400Hz(void);
 float limit(float value, float min, float max);
+uint32_t count_num = 0;
 
 // Main loop
 void loop_400Hz(void) {
     // 400Hzで以降のコードが実行
 
+    // sensing
     update_loop400Hz();
     
     // Mode select
-    if (StampFly.flag.mode == INIT_MODE) 
+    if (StampFly.flag.mode == INIT_MODE) {
         init_mode();
-    else if (StampFly.flag.mode == AVERAGE_MODE)
+    }
+    else if (StampFly.flag.mode == AVERAGE_MODE) {
         average_mode();
-    else if (StampFly.flag.mode == FLIGHT_MODE)
+    }
+    else if (StampFly.flag.mode == FLIGHT_MODE){
         flight_mode();
-    else if (StampFly.flag.mode == PARKING_MODE)
-        parking_mode();
+        count_num++;
+    }
+    else if (StampFly.flag.mode == PARKING_MODE){
+        parking_mode();     // PIDをする仕込みを入れる
+        count_num++;
+    }
 
     //// Telemetry
     telemetry();
     StampFly.flag.oldmode = StampFly.flag.mode;  // Memory now mode
-    
+
     // End of Loop_400Hz function    
 }
 
@@ -188,15 +196,25 @@ void flight_mode(void) {
     // Set LED Color
     onboard_led1(YELLOW, 1);
     onboard_led2(YELLOW, 1);
+
+    // StampFly.ref.throttle　：　プロポから受信する構造体
     StampFly.ref.throttle = limit(Stick[THROTTLE], 0.0, 0.9);
 
-    motor_set_duty_fl(StampFly.ref.throttle);
-    motor_set_duty_fr(StampFly.ref.throttle);
-    motor_set_duty_rl(StampFly.ref.throttle);
-    motor_set_duty_rr(StampFly.ref.throttle);
+    motor_set_duty_fl(0.15);
+    motor_set_duty_fr(0.15);
+    motor_set_duty_rl(0.15);
+    motor_set_duty_rr(0.15);
+
+    ///ここから
+        
+    ///ここに
+
 
     //Arm（スロットル）ボタンを監視して押されたらParkingモードに復帰するためのコード
-    if (armButtonPressedAndRerleased)StampFly.flag.mode = PARKING_MODE;
+    if (armButtonPressedAndRerleased || count_num >= 800) {
+        StampFly.flag.mode = PARKING_MODE;
+        count_num = 0;
+    }
     armButtonPressedAndRerleased = 0;
 }
 
@@ -209,8 +227,11 @@ void parking_mode(void) {
     StampFly.counter.loop = 0;
     
     motor_stop();
-    if (armButtonPressedAndRerleased)StampFly.flag.mode = FLIGHT_MODE;
-    armButtonPressedAndRerleased = 0;
+    if (armButtonPressedAndRerleased || count_num >= 800) {
+        StampFly.flag.mode = FLIGHT_MODE;
+        count_num = 0;
+    }
+        armButtonPressedAndRerleased = 0;
 }
 
 float limit(float value, float min, float max) {

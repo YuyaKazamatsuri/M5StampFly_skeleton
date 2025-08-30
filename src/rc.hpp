@@ -32,7 +32,7 @@
 
 // #define MINIJOYC
 
-#define CHANNEL (3)
+#define CHANNEL (11)     // joystick channel : change ch 11
 #define JOY (0)
 #define TELEM (0)
 
