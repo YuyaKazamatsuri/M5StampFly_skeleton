@@ -219,21 +219,13 @@ void flight_mode(void) {
     float pitch_rate_error = StampFly.ref.pitch - StampFly.sensor.pitch_rate;
     float yaw_rate_error   = StampFly.ref.yaw   - StampFly.sensor.yaw_rate;
 
-    USBSerial.printf("Throttle: %5.2f, delta_roll: %5.2f, delta_pitch: %5.2f, delta_yaw: %5.2f\n",
-    Stick[THROTTLE], roll_rate_error, pitch_rate_error, yaw_rate_error);
-
-    //比例ゲイン
-    float kp_roll  = 0.049;
-    float kp_pitch = 0.071;
-    float kp_yaw   = 0.363;
-
-    //比例制御則
-    float delta_roll  = kp_roll  * roll_rate_error;
-    float delta_pitch = kp_pitch * pitch_rate_error;
-    float delta_yaw   = kp_yaw   * yaw_rate_error;
+    //PID制御則
+    float delta_roll  = StampFly.pid.roll.update(roll_rate_error, StampFly.times.interval_time);
+    float delta_pitch = StampFly.pid.pitch.update(pitch_rate_error, StampFly.times.interval_time);
+    float delta_yaw   = StampFly.pid.yaw.update(yaw_rate_error, StampFly.times.interval_time);
 
     //トリム調整（機体のアンバランスをキャンセルするためトリム値を加算）
-    float trim_roll  = 0.01;
+    float trim_roll  = 0.00;
     float trim_pitch = 0.00;
     float trim_yaw   = 0.00;
     delta_roll  += trim_roll;
@@ -249,11 +241,11 @@ void flight_mode(void) {
     float rear_left_duty   = StampFly.ref.throttle + delta_roll - delta_pitch + delta_yaw;
     float rear_right_duty  = StampFly.ref.throttle - delta_roll - delta_pitch - delta_yaw;
 
-    //Duty比を0.0~0.95に制限
-    front_left_duty  = limit(front_left_duty,  0.0, 0.95);
-    front_right_duty = limit(front_right_duty, 0.0, 0.95);
-    rear_left_duty   = limit(rear_left_duty,   0.0, 0.95);
-    rear_right_duty  = limit(rear_right_duty,  0.0, 0.95);
+    //Duty比を0.0~0.90に制限
+    front_left_duty  = limit(front_left_duty,  0.0, 0.90);
+    front_right_duty = limit(front_right_duty, 0.0, 0.90);
+    rear_left_duty   = limit(rear_left_duty,   0.0, 0.90);
+    rear_right_duty  = limit(rear_right_duty,  0.0, 0.90);
 
     //PWMのDutyをセット
     motor_set_duty_fl(front_left_duty);
@@ -286,12 +278,36 @@ void parking_mode(void) {
 
     StampFly.counter.loop = 0;
     
+    //PID Gain set
+    const float kp_roll  = 0.049f;
+    const float kp_pitch = 0.071f;
+    const float kp_yaw   = 0.363f;
+    const float ti_roll  = 10000.0;
+    const float ti_pitch = 10000.0;
+    const float ti_yaw   = 10000.0;
+    const float td_roll  = 0.0f;
+    const float td_pitch = 0.0f;
+    const float td_yaw   = 0.0;
+    const float eta_roll  = 0.052f;
+    const float eta_pitch = 0.052f;
+    const float eta_yaw   = 0.052f;
+    const float h = 0.0025;
+
+    StampFly.pid.roll.set_parameter(  kp_roll,  ti_roll,  td_roll,  eta_roll,  h);
+    StampFly.pid.pitch.set_parameter( kp_pitch, ti_pitch, td_pitch, eta_pitch, h);
+    StampFly.pid.yaw.set_parameter(   kp_yaw,   ti_yaw,   td_yaw,   eta_yaw,   h);
+
+    //PID Integral Reset
+    StampFly.pid.roll.reset();
+    StampFly.pid.pitch.reset();
+    StampFly.pid.yaw.reset();
+
     motor_stop();
-    if (armButtonPressedAndRerleased) {
-        StampFly.flag.mode = FLIGHT_MODE;
-        count_num = 0;
-    }
-        armButtonPressedAndRerleased = 0;
+    if (armButtonPressedAndRerleased)StampFly.flag.mode = FLIGHT_MODE;
+    armButtonPressedAndRerleased = 0;
+
+    //電源電圧をシリアルモニタで表示
+    USBSerial.printf("Battery Voltage: %5.2f V\r\n", StampFly.sensor.voltage);
 }
 
 float limit(float value, float min, float max) {
