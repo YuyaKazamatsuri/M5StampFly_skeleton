@@ -46,7 +46,7 @@
 
 volatile uint8_t armButtonState = 0;
 volatile uint8_t armButtonPressedAndRerleased = 0;
-volatile uint8_t previousArmButtonState = 0; 
+volatile uint8_t previousArmButtonState = 0;
 
 void IRAM_ATTR onTimer(void);
 void init_copter(void);
@@ -57,6 +57,8 @@ void flight_mode(void);
 void parking_mode(void);
 void loop_400Hz(void);
 float limit(float value, float min, float max);
+float deadband(float value, float db);
+
 uint32_t count_num = 0;
 
 // Main loop
@@ -197,25 +199,83 @@ void flight_mode(void) {
     onboard_led1(YELLOW, 1);
     onboard_led2(YELLOW, 1);
 
-    // StampFly.ref.throttle　：　プロポから受信する構造体
-    StampFly.ref.throttle = limit(Stick[THROTTLE], 0.0, 0.9);
+    // 前進
+    StampFly.ref.throttle   = limit(Stick[THROTTLE], 0.0, 0.9);
 
-    motor_set_duty_fl(0.15);
-    motor_set_duty_fr(0.15);
-    motor_set_duty_rl(0.15);
-    motor_set_duty_rr(0.15);
+    //制御目標を送信機のStickの倒し量から取得
+    int32_t yaw_stick_gein = 5;
+    StampFly.ref.roll       =                       limit(Stick[AILERON],   -0.9, 0.9);
+    StampFly.ref.pitch      =                       limit(Stick[ELEVATOR],  -0.9, 0.9);
+    StampFly.ref.yaw        = yaw_stick_gein *      limit(Stick[RUDDER],    -0.9, 0.9);
 
-    ///ここから
-        
-    ///ここに
+    //不感帯を適用（ファイルの最後にdeadband関数追加）
+    float cutOff = 0.03;
+    StampFly.ref.roll       = deadband(StampFly.ref.roll,   cutOff);
+    StampFly.ref.pitch      = deadband(StampFly.ref.pitch,  cutOff);
+    StampFly.ref.yaw        = deadband(StampFly.ref.yaw,    cutOff);
 
+    //角速度誤差を計算
+    float roll_rate_error  = StampFly.ref.roll  - StampFly.sensor.roll_rate;
+    float pitch_rate_error = StampFly.ref.pitch - StampFly.sensor.pitch_rate;
+    float yaw_rate_error   = StampFly.ref.yaw   - StampFly.sensor.yaw_rate;
+
+    USBSerial.printf("Throttle: %5.2f, delta_roll: %5.2f, delta_pitch: %5.2f, delta_yaw: %5.2f\n",
+    Stick[THROTTLE], roll_rate_error, pitch_rate_error, yaw_rate_error);
+
+    //比例ゲイン
+    float kp_roll  = 0.049;
+    float kp_pitch = 0.071;
+    float kp_yaw   = 0.363;
+
+    //比例制御則
+    float delta_roll  = kp_roll  * roll_rate_error;
+    float delta_pitch = kp_pitch * pitch_rate_error;
+    float delta_yaw   = kp_yaw   * yaw_rate_error;
+
+    //トリム調整（機体のアンバランスをキャンセルするためトリム値を加算）
+    float trim_roll  = 0.01;
+    float trim_pitch = 0.00;
+    float trim_yaw   = 0.00;
+    delta_roll  += trim_roll;
+    delta_pitch += trim_pitch;
+    delta_yaw   += trim_yaw;
+
+    USBSerial.printf("Throttle: %5.2f, delta_roll: %5.2f, delta_pitch: %5.2f, delta_yaw: %5.2f\n",
+    Stick[THROTTLE], delta_roll, delta_pitch, delta_yaw);
+
+    //ミキシング
+    float front_left_duty  = StampFly.ref.throttle + delta_roll + delta_pitch - delta_yaw;
+    float front_right_duty = StampFly.ref.throttle - delta_roll + delta_pitch + delta_yaw;
+    float rear_left_duty   = StampFly.ref.throttle + delta_roll - delta_pitch + delta_yaw;
+    float rear_right_duty  = StampFly.ref.throttle - delta_roll - delta_pitch - delta_yaw;
+
+    //Duty比を0.0~0.95に制限
+    front_left_duty  = limit(front_left_duty,  0.0, 0.95);
+    front_right_duty = limit(front_right_duty, 0.0, 0.95);
+    rear_left_duty   = limit(rear_left_duty,   0.0, 0.95);
+    rear_right_duty  = limit(rear_right_duty,  0.0, 0.95);
+
+    //PWMのDutyをセット
+    motor_set_duty_fl(front_left_duty);
+    motor_set_duty_fr(front_right_duty);
+    motor_set_duty_rl(rear_left_duty);
+    motor_set_duty_rr(rear_right_duty);
 
     //Arm（スロットル）ボタンを監視して押されたらParkingモードに復帰するためのコード
-    if (armButtonPressedAndRerleased || count_num >= 800) {
+    if (armButtonPressedAndRerleased) {
         StampFly.flag.mode = PARKING_MODE;
         count_num = 0;
     }
+
     armButtonPressedAndRerleased = 0;
+
+    //USBSerial.printf("Throttle: %5.2f, AILERON: %5.2f, ELEVATOR: %5.2f, RUDDER: %5.2f\n",
+    //    Stick[THROTTLE], Stick[AILERON], Stick[ELEVATOR], Stick[RUDDER]);
+
+    //USBSerial.printf("Time: %5.2f,Roll : %5.2f, Pitch : %5.2f, Yaw : %5.2f\n", StampFly.times.elapsed_time, StampFly.sensor.roll_rate, StampFly.sensor.pitch_rate, StampFly.sensor.yaw_rate);
+    
+    //電源電圧をシリアルモニタで表示
+    // USBSerial.printf("Battery Voltage: %5.2f V\r\n", StampFly.sensor.voltage);
 }
 
 void parking_mode(void) {
@@ -227,7 +287,7 @@ void parking_mode(void) {
     StampFly.counter.loop = 0;
     
     motor_stop();
-    if (armButtonPressedAndRerleased || count_num >= 800) {
+    if (armButtonPressedAndRerleased) {
         StampFly.flag.mode = FLIGHT_MODE;
         count_num = 0;
     }
@@ -235,7 +295,31 @@ void parking_mode(void) {
 }
 
 float limit(float value, float min, float max) {
-    if (value < min) return min;
-    if (value > max) return max;
+    if (value < min) {
+        return min;
+    }
+
+    if (value > max) {
+        return max;
+    }
+
     return value;
+}
+
+/*
+ノイズ切り捨てたい変数  ：  value
+ノイズと判定する公差    ：  db
+*/
+
+float deadband(float value, float db) {
+
+    if (value > db) {
+        return (value - db) / (1.0 - db);
+    }
+
+    if (value < -db) {
+        return (value + db) / (1.0 - db);
+    }
+
+    return 0.0;
 }

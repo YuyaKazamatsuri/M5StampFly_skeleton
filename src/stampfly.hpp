@@ -51,7 +51,7 @@ typedef struct{
 }counter_t;
 
 typedef struct{
-    float elapsed_time;
+    float elapsed_time;     // 校正終了後からの時間
     float old_elapsed_time;
     float interval_time;
     uint32_t start_time;
