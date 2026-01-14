@@ -232,14 +232,16 @@ void flight_mode(void) {
     delta_pitch += trim_pitch;
     delta_yaw   += trim_yaw;
 
-    USBSerial.printf("Throttle: %5.2f, delta_roll: %5.2f, delta_pitch: %5.2f, delta_yaw: %5.2f\n",
-    Stick[THROTTLE], delta_roll, delta_pitch, delta_yaw);
+    //USBSerial.printf("Throttle: %5.2f, delta_roll: %5.2f, delta_pitch: %5.2f, delta_yaw: %5.2f\n",
+    //Stick[THROTTLE], delta_roll, delta_pitch, delta_yaw);
 
     //ミキシング
-    float front_left_duty  = StampFly.ref.throttle + delta_roll + delta_pitch - delta_yaw;
-    float front_right_duty = StampFly.ref.throttle - delta_roll + delta_pitch + delta_yaw;
-    float rear_left_duty   = StampFly.ref.throttle + delta_roll - delta_pitch + delta_yaw;
-    float rear_right_duty  = StampFly.ref.throttle - delta_roll - delta_pitch - delta_yaw;
+    float front_left_duty  = StampFly.ref.throttle + 0.25 * (delta_roll + delta_pitch - delta_yaw)      / BATTERY_VOLTAGE;
+    float front_right_duty = StampFly.ref.throttle + 0.25 * (- delta_roll + delta_pitch + delta_yaw)    / BATTERY_VOLTAGE;
+    float rear_left_duty   = StampFly.ref.throttle + 0.25 * ( delta_roll - delta_pitch + delta_yaw)     / BATTERY_VOLTAGE;
+    float rear_right_duty  = StampFly.ref.throttle + 0.25 * (- delta_roll - delta_pitch - delta_yaw)    
+    
+    / BATTERY_VOLTAGE;
 
     //Duty比を0.0~0.90に制限
     front_left_duty  = limit(front_left_duty,  0.0, 0.90);
@@ -279,9 +281,9 @@ void parking_mode(void) {
     StampFly.counter.loop = 0;
     
     //PID Gain set
-    const float kp_roll  = 0.049f;
-    const float kp_pitch = 0.071f;
-    const float kp_yaw   = 0.363f;
+    const float kp_roll  = 0.078f;
+    const float kp_pitch = 0.051f;
+    const float kp_yaw   = 0.053f;
     const float ti_roll  = 10000.0;
     const float ti_pitch = 10000.0;
     const float ti_yaw   = 10000.0;
